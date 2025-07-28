@@ -241,6 +241,8 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _showComments(String postId) {
+    final commentController = TextEditingController();
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -365,11 +367,110 @@ class _FeedScreenState extends State<FeedScreen> {
                   },
                 ),
               ),
+              // Comment input section
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: SafeArea(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Colors.blue[100],
+                        child: Icon(Icons.person, color: Colors.blue[600], size: 18),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: TextField(
+                            controller: commentController,
+                            decoration: const InputDecoration(
+                              hintText: 'Write a comment...',
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
+                            maxLines: null,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (value) async {
+                              if (value.trim().isNotEmpty) {
+                                await _addCommentDirect(postId, value.trim());
+                                commentController.clear();
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () async {
+                          if (commentController.text.trim().isNotEmpty) {
+                            await _addCommentDirect(postId, commentController.text.trim());
+                            commentController.clear();
+                          }
+                        },
+                        icon: Icon(Icons.send, color: Colors.blue[600]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _addCommentDirect(String postId, String comment) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      
+      // Add comment to comments collection
+      await FirebaseDatabase.instance
+          .ref()
+          .child('comments')
+          .child(postId)
+          .push()
+          .set({
+        'content': comment,
+        'authorId': user?.uid,
+        'authorName': user?.displayName ?? user?.email?.split('@')[0] ?? 'Anonymous',
+        'timestamp': ServerValue.timestamp,
+      });
+
+      // Update comment count
+      final postSnapshot = await FirebaseDatabase.instance
+          .ref()
+          .child('posts')
+          .child(postId)
+          .get();
+      
+      if (postSnapshot.exists) {
+        final postData = postSnapshot.value as Map<dynamic, dynamic>;
+        final currentComments = postData['comments'] ?? 0;
+        
+        await FirebaseDatabase.instance
+            .ref()
+            .child('posts')
+            .child(postId)
+            .child('comments')
+            .set(currentComments + 1);
+      }
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding comment: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -700,9 +801,7 @@ class _FeedScreenState extends State<FeedScreen> {
                           ),
                         ),
                         TextButton.icon(
-                          onPressed: () {
-                            _showComments(post.key);
-                          },
+                          onPressed: () => _showComments(post.key),
                           icon: Icon(
                             Icons.comment_outlined,
                             size: 20,
@@ -714,7 +813,11 @@ class _FeedScreenState extends State<FeedScreen> {
                           ),
                         ),
                         TextButton.icon(
-                          onPressed: () {},
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Share functionality coming soon!')),
+                            );
+                          },
                           icon: Icon(
                             Icons.share_outlined,
                             size: 20,
