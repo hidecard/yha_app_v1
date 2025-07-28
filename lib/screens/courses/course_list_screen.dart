@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'course_detail_screen.dart';
+import 'course_edit_screen.dart';
 
 class CourseListScreen extends StatefulWidget {
   const CourseListScreen({super.key});
@@ -14,33 +17,114 @@ class _CourseListScreenState extends State<CourseListScreen> {
   String? _selectedCategory;
   String? _selectedSubject;
 
+  bool get isAdmin {
+    final user = FirebaseAuth.instance.currentUser;
+    return user?.email == 'admin@yha.com' || user?.email == 'admin@gmail.com';
+  }
+
+  Future<void> _deleteCourse(String courseId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Course'),
+        content: Text('Are you sure you want to delete "$title"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseDatabase.instance
+            .ref()
+            .child('courses')
+            .child(courseId)
+            .remove();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Course deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting course: $e')),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('Courses'),
+        title: const Text('Courses', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.blueGrey,
-        elevation: 0.5,
+        foregroundColor: Colors.black87,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              // Add search functionality later
+            },
+          ),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Filters
-            Row(
+      body: Column(
+        children: [
+          // Header section with filters
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _buildCategoryFilter()),
-                const SizedBox(width: 16),
-                Expanded(child: _buildSubjectFilter()),
+                const Text(
+                  'Find the perfect course for you',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Filters
+                Row(
+                  children: [
+                    Expanded(child: _buildCategoryFilter()),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildSubjectFilter()),
+                  ],
+                ),
               ],
             ),
-            const SizedBox(height: 16),
-            // Courses list
-            Expanded(child: _buildCoursesList()),
-          ],
-        ),
+          ),
+          // Courses list
+          Expanded(child: _buildCoursesList()),
+        ],
       ),
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
+              onPressed: () {
+                Navigator.pushNamed(context, '/admin');
+              },
+              backgroundColor: Colors.blue[600],
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -133,11 +217,23 @@ class _CourseListScreenState extends State<CourseListScreen> {
         }
         
         if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
-          return const Center(child: Text('No courses available'));
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.school, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No courses available', style: TextStyle(fontSize: 18, color: Colors.grey)),
+              ],
+            ),
+          );
         }
 
         final data = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-        var courses = data.entries.toList();
+        var courses = data.entries.where((entry) {
+          final courseData = entry.value as Map<dynamic, dynamic>;
+          return courseData['status'] != 'deleted';
+        }).toList();
 
         // Apply filters
         if (_selectedCategory != null) {
@@ -159,20 +255,37 @@ class _CourseListScreenState extends State<CourseListScreen> {
         }
 
         if (courses.isEmpty) {
-          return const Center(child: Text('No courses match your filters'));
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.filter_list_off, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No courses match your filters', style: TextStyle(fontSize: 18, color: Colors.grey)),
+              ],
+            ),
+          );
         }
 
-        return ListView.separated(
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
           itemCount: courses.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
             final course = courses[index];
             final courseData = course.value as Map<dynamic, dynamic>;
             
-            return Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: InkWell(
                 onTap: () {
@@ -187,12 +300,69 @@ class _CourseListScreenState extends State<CourseListScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Course image
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
-                      child: _buildCourseImage(courseData['imageUrl']),
+                    // Course image with overlay
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                          child: _buildCourseImage(courseData['imageUrl']),
+                        ),
+                        // Category badge
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[600],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              courseData['category'] ?? 'General',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Admin controls
+                        if (isAdmin)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 18),
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => CourseEditScreen(courseId: course.key),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                    onPressed: () => _deleteCourse(
+                                      course.key,
+                                      courseData['title'] ?? 'Unknown Course',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     // Course details
                     Padding(
@@ -200,56 +370,134 @@ class _CourseListScreenState extends State<CourseListScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            courseData['title'] ?? 'No Title',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            courseData['description'] ?? 'No Description',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 12),
+                          // Title and rating
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.person, size: 16, color: Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Text(
-                                courseData['instructor'] ?? 'No Instructor',
-                                style: TextStyle(color: Colors.grey[600]),
+                              Expanded(
+                                child: Text(
+                                  courseData['title'] ?? 'No Title',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              const Spacer(),
-                              Text(
-                                courseData['fee'] ?? 'Free',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.star, size: 14, color: Colors.amber[700]),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '4.5',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.amber[700],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          if (courseData['subjects'] != null)
-                            Wrap(
-                              spacing: 4,
-                              children: (courseData['subjects'] as List).take(3).map((subject) {
-                                return Chip(
-                                  label: Text(
-                                    subject.toString(),
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                );
-                              }).toList(),
+                          // Description
+                          Text(
+                            courseData['description'] ?? 'No Description',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                              height: 1.4,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 12),
+                          // Instructor and students
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundColor: Colors.blue[100],
+                                child: Icon(Icons.person, size: 14, color: Colors.blue[600]),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  courseData['instructor'] ?? 'No Instructor',
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '1.2k students',
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Subjects and price
+                          Row(
+                            children: [
+                              Expanded(
+                                child: courseData['subjects'] != null
+                                    ? Wrap(
+                                        spacing: 4,
+                                        children: (courseData['subjects'] as List).take(2).map((subject) {
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[100],
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              subject.toString(),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey[700],
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      )
+                                    : const SizedBox(),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  courseData['fee'] ?? 'Free',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green[700],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -293,12 +541,6 @@ class _CourseListScreenState extends State<CourseListScreen> {
               ),
             );
           },
-          httpHeaders: const {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-          },
-          cacheManager: DefaultCacheManager(),
           fadeInDuration: const Duration(milliseconds: 200),
         ),
       );

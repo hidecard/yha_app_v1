@@ -6,6 +6,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import 'admin/categories_screen.dart';
+import 'admin/subjects_screen.dart';
+import 'admin/instructors_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -384,6 +387,58 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
+  Widget _buildManagementButtons() {
+    return Column(
+      children: [
+        const Text('Management', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CategoriesScreen()),
+                  );
+                },
+                icon: const Icon(Icons.category),
+                label: const Text('Categories'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SubjectsScreen()),
+                  );
+                },
+                icon: const Icon(Icons.subject),
+                label: const Text('Subjects'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const InstructorsScreen()),
+                  );
+                },
+                icon: const Icon(Icons.person),
+                label: const Text('Instructors'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!isAdmin) {
@@ -404,6 +459,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             child: const Text('Add Test Data'),
           ),
           const SizedBox(height: 24),
+          // Management buttons
+          _buildManagementButtons(),
           // Course Form
           Card(
             child: Padding(
@@ -488,6 +545,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 }
+
+
+
+
+
+
 
 
 
