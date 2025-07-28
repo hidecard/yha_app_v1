@@ -30,6 +30,348 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  Future<void> _deletePost(String postId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseDatabase.instance
+            .ref()
+            .child('posts')
+            .child(postId)
+            .remove();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Post deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting post: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _editPost(String postId, String currentContent) async {
+    final controller = TextEditingController(text: currentContent);
+    
+    final newContent = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Post'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'What\'s on your mind?',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 5,
+          minLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+
+    if (newContent != null && newContent.isNotEmpty && newContent != currentContent) {
+      try {
+        await FirebaseDatabase.instance
+            .ref()
+            .child('posts')
+            .child(postId)
+            .child('content')
+            .set(newContent);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Post updated successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error updating post: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _addComment(String postId, int currentComments) async {
+    final controller = TextEditingController();
+    
+    final comment = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Comment'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Write a comment...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+          minLines: 1,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Comment'),
+          ),
+        ],
+      ),
+    );
+
+    if (comment != null && comment.isNotEmpty) {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        
+        // Add comment to comments collection
+        await FirebaseDatabase.instance
+            .ref()
+            .child('comments')
+            .child(postId)
+            .push()
+            .set({
+          'content': comment,
+          'authorId': user?.uid,
+          'authorName': user?.displayName ?? user?.email?.split('@')[0] ?? 'Anonymous',
+          'timestamp': ServerValue.timestamp,
+        });
+
+        // Update comment count
+        await FirebaseDatabase.instance
+            .ref()
+            .child('posts')
+            .child(postId)
+            .child('comments')
+            .set(currentComments + 1);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Comment added successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error adding comment: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _showPostOptions(String postId, String authorId, String content) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isOwner = currentUser?.uid == authorId;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isOwner) ...[
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Post'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _editPost(postId, content);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Delete Post', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deletePost(postId);
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(Icons.report),
+              title: const Text('Report Post'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Post reported')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showComments(String postId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+                ),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Comments',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: StreamBuilder<DatabaseEvent>(
+                  stream: FirebaseDatabase.instance
+                      .ref()
+                      .child('comments')
+                      .child(postId)
+                      .orderByChild('timestamp')
+                      .onValue,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || snapshot.data!.snapshot.value == null) {
+                      return const Center(
+                        child: Text('No comments yet', style: TextStyle(color: Colors.grey)),
+                      );
+                    }
+
+                    final data = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+                    final comments = data.entries.toList()
+                      ..sort((a, b) {
+                        final aTime = (a.value as Map)['timestamp'] ?? 0;
+                        final bTime = (b.value as Map)['timestamp'] ?? 0;
+                        return aTime.compareTo(bTime);
+                      });
+
+                    return ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: comments.length,
+                      itemBuilder: (context, index) {
+                        final comment = comments[index];
+                        final commentData = comment.value as Map<dynamic, dynamic>;
+                        
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor: Colors.blue[100],
+                                child: Text(
+                                  (commentData['authorName'] ?? 'A')[0].toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[600],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        commentData['authorName'] ?? 'Anonymous',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        commentData['content'] ?? '',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _formatTimestamp(commentData['timestamp']),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -251,7 +593,11 @@ class _FeedScreenState extends State<FeedScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.more_horiz),
-                          onPressed: () {},
+                          onPressed: () => _showPostOptions(
+                            post.key,
+                            postData['authorId'] ?? '',
+                            postData['content'] ?? '',
+                          ),
                         ),
                       ],
                     ),
@@ -354,7 +700,9 @@ class _FeedScreenState extends State<FeedScreen> {
                           ),
                         ),
                         TextButton.icon(
-                          onPressed: () {},
+                          onPressed: () {
+                            _showComments(post.key);
+                          },
                           icon: Icon(
                             Icons.comment_outlined,
                             size: 20,

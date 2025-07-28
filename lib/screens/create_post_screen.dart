@@ -406,18 +406,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     onPressed: _pickImage,
                     icon: Icon(Icons.photo_library, color: Colors.green[600]),
                   ),
-                  IconButton(
-                    onPressed: () {
-                      // Add location functionality
-                    },
-                    icon: Icon(Icons.location_on, color: Colors.red[600]),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      // Add feeling/activity
-                    },
-                    icon: Icon(Icons.emoji_emotions, color: Colors.orange[600]),
-                  ),
                 ],
               ),
             ),
